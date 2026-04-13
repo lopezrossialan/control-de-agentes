@@ -1,9 +1,43 @@
-require("dotenv").config();
-const express = require("express");
-const cors = require("cors");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
+
+// ─── Base dirs: pkg empaqueta en snapshot virtual (read-only) ────────────────
+// DATA_DIR = carpeta real junto al .exe (writable) para agents, config, chats, etc.
+// APP_DIR  = __dirname (snapshot dentro del .exe) para archivos estaticos (panel/)
+const IS_PKG = typeof process.pkg !== "undefined";
+const DATA_DIR = IS_PKG ? path.dirname(process.execPath) : __dirname;
+const APP_DIR = __dirname;
+
+// En modo .exe: crear carpetas necesarias junto al ejecutable
+if (IS_PKG) {
+  for (const d of ["agents", "config", "config/skills", "chats", "outputs"]) {
+    const p = path.join(DATA_DIR, d);
+    if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
+  }
+  // Copiar config por defecto si no existe
+  const defaults = ["config/active-agents.json", "config/agent-dirs.json"];
+  for (const f of defaults) {
+    const dest = path.join(DATA_DIR, f);
+    const src = path.join(APP_DIR, f);
+    if (!fs.existsSync(dest) && fs.existsSync(src)) {
+      fs.copyFileSync(src, dest);
+    }
+  }
+  // Copiar skills globales por defecto
+  const srcSkills = path.join(APP_DIR, "config", "skills");
+  const destSkills = path.join(DATA_DIR, "config", "skills");
+  if (fs.existsSync(srcSkills)) {
+    for (const sk of fs.readdirSync(srcSkills)) {
+      const dest = path.join(destSkills, sk);
+      if (!fs.existsSync(dest)) fs.copyFileSync(path.join(srcSkills, sk), dest);
+    }
+  }
+}
+
+require("dotenv").config({ path: path.join(DATA_DIR, ".env") });
+const express = require("express");
+const cors = require("cors");
 const OpenAI = require("openai").default;
 const mammoth = require("mammoth");
 const WordExtractor = require("word-extractor");
@@ -50,7 +84,7 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
 app.use(
-  express.static(path.join(__dirname, "panel"), {
+  express.static(path.join(APP_DIR, "panel"), {
     etag: false,
     lastModified: false,
     setHeaders: (res) => {
@@ -137,7 +171,7 @@ function parseFrontmatter(content) {
 }
 
 // ─── Rutas de agentes extra ──────────────────────────────────────────────────
-const EXTRA_DIRS_FILE = path.join(__dirname, "config", "agent-dirs.json");
+const EXTRA_DIRS_FILE = path.join(DATA_DIR, "config", "agent-dirs.json");
 
 function readExtraDirs() {
   try {
@@ -155,7 +189,7 @@ function writeExtraDirs(dirs) {
 }
 
 function getAllAgentDirs() {
-  return [path.join(__dirname, "agents"), ...readExtraDirs()];
+  return [path.join(DATA_DIR, "agents"), ...readExtraDirs()];
 }
 
 // ─── SEGURIDAD: helper para validar que una ruta está dentro de un directorio base ──
@@ -243,7 +277,7 @@ app.delete("/api/agent-dirs", (req, res) => {
 });
 
 // ─── Gestión de Agentes Activos (Server-side Persistence) ───────────────────
-const ACTIVE_AGENTS_FILE = path.join(__dirname, "config", "active-agents.json");
+const ACTIVE_AGENTS_FILE = path.join(DATA_DIR, "config", "active-agents.json");
 
 function readActiveAgents() {
   try {
@@ -282,7 +316,7 @@ function setActiveAgents(agentIds) {
 }
 
 // ─── API: Skills globales ─────────────────────────────────────────────────────
-const GLOBAL_SKILLS_DIR = path.join(__dirname, "config", "skills");
+const GLOBAL_SKILLS_DIR = path.join(DATA_DIR, "config", "skills");
 
 app.get("/api/skills", (req, res) => {
   try {
@@ -304,7 +338,7 @@ app.get("/api/skills", (req, res) => {
 
 // ─── API: Listar agentes ─────────────────────────────────────────────────────
 app.get("/api/agents", (req, res) => {
-  const defaultDir = path.join(__dirname, "agents");
+  const defaultDir = path.join(DATA_DIR, "agents");
   const allDirs = getAllAgentDirs();
   const result = [];
   const seenIds = new Set();
@@ -408,7 +442,7 @@ app.post("/api/agents/import", (req, res) => {
       .status(400)
       .json({ error: "Archivo no permitido o no encontrado" });
   }
-  const localAgentsDir = path.join(__dirname, "agents");
+  const localAgentsDir = path.join(DATA_DIR, "agents");
   const safeAgentId = path.basename(agentId).replace(/[^a-zA-Z0-9\-_]/g, "-");
   const targetDir = path.join(localAgentsDir, safeAgentId);
   if (!isSafePath(localAgentsDir, targetDir)) {
@@ -447,7 +481,7 @@ app.post("/api/agents/import-files", (req, res) => {
   const idMatch = agentContent.match(/^---[\r\n]+[\s\S]*?^id:\s*(.+)$/m);
   const rawId = idMatch ? idMatch[1].trim() : folderName;
   const agentId = rawId.replace(/[^a-zA-Z0-9\-_]/g, "-");
-  const localAgentsDir = path.join(__dirname, "agents");
+  const localAgentsDir = path.join(DATA_DIR, "agents");
   const targetDir = path.join(localAgentsDir, agentId);
   if (!isSafePath(localAgentsDir, targetDir)) {
     return res.status(400).json({ error: "ID de agente inválido" });
@@ -539,9 +573,9 @@ app.post("/api/chat", async (req, res) => {
   for (const skillId of agentSkills) {
     const safeSkillId = path.basename(skillId).replace(/[^a-zA-Z0-9\-_]/g, "-");
     // 1. Skill global en config/skills/
-    const globalSkillFile = path.join(__dirname, "config", "skills", `${safeSkillId}.skill.md`);
+    const globalSkillFile = path.join(DATA_DIR, "config", "skills", `${safeSkillId}.skill.md`);
     // 2. Skill local en agents/{agentId}/skills/
-    const localSkillFile = path.join(__dirname, "agents", agentId, "skills", `${safeSkillId}.skill.md`);
+    const localSkillFile = path.join(DATA_DIR, "agents", agentId, "skills", `${safeSkillId}.skill.md`);
     let skillContent = null;
     if (fs.existsSync(globalSkillFile)) {
       skillContent = fs.readFileSync(globalSkillFile, "utf8");
@@ -660,7 +694,7 @@ app.post("/api/save", (req, res) => {
     .replace(/\.+/g, ".")
     .replace(/^\./, "");
   const finalName = safeName.endsWith(".md") ? safeName : `${safeName}.md`;
-  const outputsDir = path.join(__dirname, "outputs");
+  const outputsDir = path.join(DATA_DIR, "outputs");
   if (!fs.existsSync(outputsDir)) fs.mkdirSync(outputsDir, { recursive: true });
   const outputPath = path.join(outputsDir, finalName);
   if (!isSafePath(outputsDir, outputPath))
@@ -839,7 +873,7 @@ app.post("/api/save-json", (req, res) => {
   const safe =
     filename.replace(/[^a-zA-Z0-9_\-\.]/g, "_").replace(/\.json$/i, "") +
     ".json";
-  const outputsDir = path.join(__dirname, "outputs");
+  const outputsDir = path.join(DATA_DIR, "outputs");
   if (!fs.existsSync(outputsDir)) fs.mkdirSync(outputsDir, { recursive: true });
   const filePath = path.join(outputsDir, safe);
   if (!isSafePath(outputsDir, filePath))
@@ -850,7 +884,7 @@ app.post("/api/save-json", (req, res) => {
 
 // ─── API: Outputs ────────────────────────────────────────────────────────────
 app.get("/api/outputs", (req, res) => {
-  const outputsDir = path.join(__dirname, "outputs");
+  const outputsDir = path.join(DATA_DIR, "outputs");
   try {
     const files = fs
       .readdirSync(outputsDir)
@@ -870,7 +904,7 @@ app.get("/api/outputs/:filename", (req, res) => {
   const safe = path
     .basename(req.params.filename)
     .replace(/[^a-zA-Z0-9\-_\.]/g, "_");
-  const outputsDir = path.join(__dirname, "outputs");
+  const outputsDir = path.join(DATA_DIR, "outputs");
   const filePath = path.join(outputsDir, safe);
   if (!isSafePath(outputsDir, filePath))
     return res.status(403).json({ error: "No permitido" });
@@ -883,7 +917,7 @@ app.delete("/api/outputs/:filename", (req, res) => {
   const safe = path
     .basename(req.params.filename)
     .replace(/[^a-zA-Z0-9\-_\.]/g, "_");
-  const outputsDir = path.join(__dirname, "outputs");
+  const outputsDir = path.join(DATA_DIR, "outputs");
   const filePath = path.join(outputsDir, safe);
   if (!isSafePath(outputsDir, filePath))
     return res.status(403).json({ error: "No permitido" });
@@ -894,7 +928,7 @@ app.delete("/api/outputs/:filename", (req, res) => {
 });
 
 // ─── CONFIG / .env ───────────────────────────────────────────────────────────
-const ENV_PATH = path.join(__dirname, ".env");
+const ENV_PATH = path.join(DATA_DIR, ".env");
 const CONFIG_KEYS = [
   "GITHUB_TOKEN",
   "OPENAI_API_KEY",
@@ -963,7 +997,7 @@ app.post("/api/config", (req, res) => {
 });
 
 // ─── MCP MANAGEMENT ──────────────────────────────────────────────────────────
-const MCP_FILE = path.join(__dirname, ".vscode", "mcp.json");
+const MCP_FILE = path.join(DATA_DIR, ".vscode", "mcp.json");
 
 function readMcpFile() {
   try {
@@ -1012,8 +1046,8 @@ app.post("/api/agents/create", (req, res) => {
   if (!id || !name)
     return res.status(400).json({ error: "id y name son requeridos" });
   const safeId = id.replace(/[^a-zA-Z0-9\-_]/g, "-").toLowerCase();
-  const agentDir = path.join(__dirname, "agents", safeId);
-  if (!isSafePath(path.join(__dirname, "agents"), agentDir)) {
+  const agentDir = path.join(DATA_DIR, "agents", safeId);
+  if (!isSafePath(path.join(DATA_DIR, "agents"), agentDir)) {
     return res.status(400).json({ error: "ID de agente inválido" });
   }
   if (fs.existsSync(agentDir))
@@ -1051,8 +1085,8 @@ app.post("/api/agents/create", (req, res) => {
 app.put("/api/agents/:id", (req, res) => {
   const safeId = path.basename(req.params.id).replace(/[^a-zA-Z0-9\-_]/g, "-");
   const { name, description, icon, flow, hint, prompt, skills } = req.body;
-  const agentDir = path.join(__dirname, "agents", safeId);
-  if (!isSafePath(path.join(__dirname, "agents"), agentDir))
+  const agentDir = path.join(DATA_DIR, "agents", safeId);
+  if (!isSafePath(path.join(DATA_DIR, "agents"), agentDir))
     return res.status(400).json({ error: "ID inválido" });
   if (!fs.existsSync(agentDir))
     return res.status(404).json({ error: "Agente no encontrado" });
@@ -1082,8 +1116,8 @@ app.put("/api/agents/:id", (req, res) => {
 
 app.delete("/api/agents/:id", (req, res) => {
   const safeId = path.basename(req.params.id).replace(/[^a-zA-Z0-9\-_]/g, "-");
-  const agentDir = path.join(__dirname, "agents", safeId);
-  if (!isSafePath(path.join(__dirname, "agents"), agentDir))
+  const agentDir = path.join(DATA_DIR, "agents", safeId);
+  if (!isSafePath(path.join(DATA_DIR, "agents"), agentDir))
     return res.status(400).json({ error: "ID inválido" });
   if (!fs.existsSync(agentDir))
     return res.status(404).json({ error: "Agente no encontrado" });
@@ -1168,8 +1202,8 @@ app.post("/api/agents/import-github", async (req, res) => {
     const agentId = (
       idMatch ? idMatch[1].trim() : agentFile.name.replace(/\.agent\.md$/, "")
     ).replace(/[^a-zA-Z0-9\-_]/g, "-");
-    const localAgentDir = path.join(__dirname, "agents", agentId);
-    if (!isSafePath(path.join(__dirname, "agents"), localAgentDir)) {
+    const localAgentDir = path.join(DATA_DIR, "agents", agentId);
+    if (!isSafePath(path.join(DATA_DIR, "agents"), localAgentDir)) {
       return res.status(400).json({ error: "ID de agente inválido" });
     }
     if (fs.existsSync(localAgentDir))
@@ -1416,7 +1450,7 @@ app.post("/api/jira/bug", async (req, res) => {
 });
 
 // ─── Chat History (persistencia local en disco) ──────────────────────────────
-const CHATS_DIR = path.join(__dirname, "chats");
+const CHATS_DIR = path.join(DATA_DIR, "chats");
 
 function getChatFile(agentId) {
   const safeId = path.basename(agentId).replace(/[^a-zA-Z0-9\-_]/g, "-");
