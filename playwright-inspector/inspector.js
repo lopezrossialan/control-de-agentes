@@ -1,12 +1,62 @@
 const { chromium } = require("playwright");
 
 /**
+ * Detecta un navegador Chromium disponible en el sistema.
+ * Prioridad: Edge (preinstalado en Windows) > Chrome > Chromium de Playwright.
+ */
+function detectBrowserChannel() {
+  const fs = require("fs");
+  const edgePaths = [
+    process.env["PROGRAMFILES(X86)"] &&
+      `${process.env["PROGRAMFILES(X86)"]}\\Microsoft\\Edge\\Application\\msedge.exe`,
+    process.env.PROGRAMFILES &&
+      `${process.env.PROGRAMFILES}\\Microsoft\\Edge\\Application\\msedge.exe`,
+    process.env.LOCALAPPDATA &&
+      `${process.env.LOCALAPPDATA}\\Microsoft\\Edge\\Application\\msedge.exe`,
+  ].filter(Boolean);
+
+  for (const p of edgePaths) {
+    if (fs.existsSync(p)) return "msedge";
+  }
+
+  const chromePaths = [
+    process.env["PROGRAMFILES(X86)"] &&
+      `${process.env["PROGRAMFILES(X86)"]}\\Google\\Chrome\\Application\\chrome.exe`,
+    process.env.PROGRAMFILES &&
+      `${process.env.PROGRAMFILES}\\Google\\Chrome\\Application\\chrome.exe`,
+    process.env.LOCALAPPDATA &&
+      `${process.env.LOCALAPPDATA}\\Google\\Chrome\\Application\\chrome.exe`,
+  ].filter(Boolean);
+
+  for (const p of chromePaths) {
+    if (fs.existsSync(p)) return "chrome";
+  }
+
+  // Fallback: dejar que Playwright intente con su propio Chromium
+  return undefined;
+}
+
+/**
  * Inspecciona una URL y extrae todos los elementos interactuables con sus locators.
  * @param {string} url - URL a inspeccionar
  * @returns {Promise<{elements: Array, screenshot: string, title: string, url: string}>}
  */
 async function inspectUrl(url) {
-    const browser = await chromium.launch({ headless: true });
+    const channel = detectBrowserChannel();
+    let browser;
+    try {
+      browser = await chromium.launch({
+        headless: true,
+        ...(channel ? { channel } : {}),
+      });
+    } catch (err) {
+      throw new Error(
+        channel
+          ? `No se pudo iniciar el navegador (${channel}). Error: ${err.message}`
+          : "No se encontro ningun navegador compatible. " +
+            "Instala Microsoft Edge, Google Chrome, o ejecuta: npx playwright install chromium"
+      );
+    }
     const context = await browser.newContext({
         userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
         viewport: { width: 1280, height: 800 },

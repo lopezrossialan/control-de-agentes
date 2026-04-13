@@ -23,12 +23,12 @@ const { execSync } = require("child_process");
 
 const BUILD_DIR = path.join(__dirname, "..", "build");
 const PROJECT_ROOT = path.join(__dirname, "..");
-const EXE_NAME = "mission-control.exe";
+const EXE_NAME = "control-de-agentes.exe";
 const OUTPUT_PATH = path.join(BUILD_DIR, EXE_NAME);
 
 console.log("\n");
 console.log("╔════════════════════════════════════════════════════════════╗");
-console.log("║  🛸 Mission Control - Build EXE                         ║");
+console.log("║  🤖 Control de Agentes - Build EXE                      ║");
 console.log("╚════════════════════════════════════════════════════════════╝");
 console.log("\n");
 
@@ -95,18 +95,18 @@ try {
 
   console.log("\n✅ EXE generado exitosamente!\n");
   console.log("╔════════════════════════════════════════════════════════════╗");
-  console.log("║  🎉 Mission Control.exe lista para distribuir!          ║");
+  console.log("║  🎉 control-de-agentes.exe lista para distribuir!       ║");
   console.log("╚════════════════════════════════════════════════════════════╝");
   console.log("\n");
   console.log("📁 Ubicación: " + OUTPUT_PATH);
   console.log("\n🚀 Para usar:");
-  console.log("   1. Copiar mission-control.exe a cualquier carpeta");
+  console.log("   1. Copiar control-de-agentes.exe a cualquier carpeta");
   console.log("   2. Doble clic en el archivo");
   console.log("   3. Se abre automáticamente en http://localhost:3000\n");
   console.log("📋 El .exe incluye:");
   console.log("   ✅ Node.js v20 (integrado)");
   console.log("   ✅ Panel web completo");
-  console.log("   ✅ Chromium para Playwright Inspector");
+  console.log("   ✅ Inspector usa Edge/Chrome del sistema (sin instalar nada)");
   console.log("   ✅ Agentes (se crean dinámicamente desde el panel)\n");
   console.log("📦 No requiere instalación de Node.js\n");
 } catch (err) {
