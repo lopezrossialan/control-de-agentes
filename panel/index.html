@@ -1,0 +1,779 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Control de Agentes</title>
+    <link rel="stylesheet" href="panel.css" />
+  </head>
+
+  <body>
+    <div class="app-layout">
+      <!-- ─── SIDEBAR / NAV ───────────────────────────────── -->
+      <aside class="sidebar">
+        <div class="sidebar-logo">
+          <div class="logo-icon">🛸</div>
+          <div class="logo-text">
+            <h1>Control de Agentes</h1>
+            <p>Agents Control V 1.2</p>
+          </div>
+        </div>
+
+        <nav class="sidebar-nav">
+          <div class="nav-group-label">WORKSPACE</div>
+          <button
+            class="sidebar-nav-item active"
+            data-view="inicio"
+            onclick="switchView('inicio', this)"
+          >
+            <span class="nav-icon">🏠</span> Inicio
+          </button>
+          <button
+            class="sidebar-nav-item"
+            data-view="agentes"
+            onclick="switchView('agentes', this)"
+          >
+            <span class="nav-icon">🤖</span> Agentes
+            <span class="nav-badge" id="nav-badge-agents"></span>
+          </button>
+          <button
+            class="sidebar-nav-item"
+            data-view="historial"
+            onclick="switchView('historial', this)"
+          >
+            <span class="nav-icon">📁</span> Historial
+            <span class="nav-badge" id="nav-badge-outputs"></span>
+          </button>
+          <div class="nav-group-label">HERRAMIENTAS</div>
+          <button
+            class="sidebar-nav-item"
+            data-view="modelos"
+            onclick="switchView('modelos', this)"
+          >
+            <span class="nav-icon">⚡</span> Modelos LLM
+          </button>
+          <button
+            class="sidebar-nav-item"
+            data-view="mcps"
+            onclick="switchView('mcps', this)"
+          >
+            <span class="nav-icon">🔌</span> MCPs
+          </button>
+          <button
+            class="sidebar-nav-item"
+            data-view="jira"
+            onclick="switchView('jira', this)"
+          >
+            <span class="nav-icon">🔗</span> Jira
+          </button>
+          <div class="nav-group-label">SISTEMA</div>
+          <button
+            class="sidebar-nav-item"
+            data-view="configuracion"
+            onclick="switchView('configuracion', this)"
+          >
+            <span class="nav-icon">⚙️</span> Configuración
+            <span
+              class="nav-badge warning"
+              id="nav-badge-config"
+              style="display: none"
+              >!</span
+            >
+          </button>
+        </nav>
+
+        <div class="sidebar-footer">
+          <span id="server-status" class="server-status-dot"
+            >⚪ CONECTANDO...</span
+          >
+        </div>
+      </aside>
+
+      <!-- ─── BODY / VISTAS ───────────────────────────────── -->
+      <main class="main-content">
+        <!-- VISTA: INICIO ───────────────────────────────── -->
+        <div class="view active" id="view-inicio">
+          <div class="view-header">
+            <h2>Flujo de trabajo</h2>
+            <div class="section-line"></div>
+          </div>
+          <div class="workflow-section">
+            <div class="workflow" id="workflow-inner">
+              <!-- generado dinámicamente por renderWorkflow() -->
+            </div>
+            <div class="workflow-note">
+              💡 Hacé click en un paso del flujo para abrir el chat
+              directamente. También podés adjuntar un
+              <strong>.doc/.docx</strong> desde cualquier agente.
+            </div>
+          </div>
+
+          <!-- Playwright Inspector -->
+          <div class="view-header" style="margin-top: 48px">
+            <h2>🔍 Playwright Inspector</h2>
+            <div class="section-line"></div>
+          </div>
+          <div class="inspector-section" id="inspector-section">
+            <div class="inspector-url-bar">
+              <input
+                type="url"
+                id="inspector-url"
+                placeholder="https://tu-app.com/pagina"
+                autocomplete="off"
+              />
+              <button
+                class="btn-inspect"
+                id="btn-inspect"
+                onclick="runInspector()"
+              >
+                🔍 Inspeccionar
+              </button>
+            </div>
+            <div
+              class="inspector-loading"
+              id="inspector-loading"
+              style="display: none"
+            >
+              <span class="spinner"></span> Inspeccionando con Playwright… esto
+              puede tardar unos segundos.
+            </div>
+            <div
+              class="inspector-results"
+              id="inspector-results"
+              style="display: none"
+            >
+              <div class="inspector-top-bar">
+                <div class="inspector-filters" id="inspector-filters">
+                  <button
+                    class="filter-btn active"
+                    data-filter="all"
+                    onclick="filterInspector(this)"
+                  >
+                    Todos
+                  </button>
+                  <button
+                    class="filter-btn"
+                    data-filter="input"
+                    onclick="filterInspector(this)"
+                  >
+                    Inputs
+                  </button>
+                  <button
+                    class="filter-btn"
+                    data-filter="button"
+                    onclick="filterInspector(this)"
+                  >
+                    Botones
+                  </button>
+                  <button
+                    class="filter-btn"
+                    data-filter="a"
+                    onclick="filterInspector(this)"
+                  >
+                    Links
+                  </button>
+                  <button
+                    class="filter-btn"
+                    data-filter="select"
+                    onclick="filterInspector(this)"
+                  >
+                    Selects
+                  </button>
+                </div>
+                <div class="inspector-actions">
+                  <button
+                    class="btn-inspector-action"
+                    onclick="copyInspectorJson()"
+                  >
+                    📋 Copiar JSON
+                  </button>
+                  <button
+                    class="btn-inspector-action"
+                    onclick="saveInspectorJson()"
+                  >
+                    💾 Guardar JSON
+                  </button>
+                  <button
+                    class="btn-inspector-action accent"
+                    onclick="sendToPlaywrightAgent()"
+                  >
+                    ⚡ Usar en Playwright Agent
+                  </button>
+                </div>
+              </div>
+              <div class="inspector-meta" id="inspector-meta"></div>
+              <div
+                class="inspector-screenshot-wrap"
+                id="inspector-screenshot-wrap"
+                style="display: none"
+              >
+                <img id="inspector-screenshot" src="" alt="Screenshot" />
+              </div>
+              <div class="inspector-table-wrap">
+                <table class="inspector-table" id="inspector-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Tipo</th>
+                      <th>Etiqueta / Texto</th>
+                      <th>Playwright Locator</th>
+                      <th>XPath</th>
+                    </tr>
+                  </thead>
+                  <tbody id="inspector-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+            <div
+              class="inspector-error"
+              id="inspector-error"
+              style="display: none"
+            ></div>
+          </div>
+        </div>
+
+        <!-- VISTA: AGENTES ──────────────────────────────── -->
+        <div class="view" id="view-agentes">
+          <div class="view-header">
+            <h2>Agentes</h2>
+            <div class="section-line"></div>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap">
+              <button class="btn-view-action" onclick="openCreateAgentModal()">
+                ➕ Crear agente
+              </button>
+              <button
+                class="btn-view-action secondary"
+                onclick="openImportGithubModal()"
+              >
+                ⬇️ Importar de GitHub
+              </button>
+              <button
+                class="btn-view-action secondary"
+                onclick="
+                  switchView(
+                    'agregar',
+                    document.querySelector('[data-view=agregar]'),
+                  )
+                "
+              >
+                🗂️ Gestionar
+              </button>
+            </div>
+          </div>
+          <div class="agents-grid" id="agents-grid"></div>
+        </div>
+
+        <!-- VISTA: AGREGAR AGENTE ───────────────────────── -->
+        <div class="view" id="view-agregar">
+          <div class="view-header">
+            <h2>Gestionar Agentes</h2>
+            <div class="section-line"></div>
+            <button
+              class="btn-view-action secondary"
+              onclick="
+                switchView(
+                  'agentes',
+                  document.querySelector('[data-view=agentes]'),
+                )
+              "
+            >
+              ← Volver
+            </button>
+          </div>
+          <div id="manage-modal-body">
+            <!-- generado dinámicamente por renderManageModal() -->
+          </div>
+        </div>
+
+        <!-- VISTA: HISTORIAL ──────────────────────────────── -->
+        <div class="view" id="view-historial">
+          <div class="view-header">
+            <h2>Historial de Outputs</h2>
+            <div class="section-line"></div>
+            <button class="btn-view-action secondary" onclick="loadHistorial()">
+              🔄 Actualizar
+            </button>
+          </div>
+          <div id="historial-body">
+            <p class="llm-empty">Cargando historial...</p>
+          </div>
+        </div>
+
+        <!-- VISTA: MODELOS ──────────────────────────────── -->
+        <div class="view" id="view-modelos">
+          <div class="view-header">
+            <h2>Modelos LLM</h2>
+            <div class="section-line"></div>
+          </div>
+          <div class="models-view-body">
+            <div class="llm-section">
+              <div class="llm-section-title">Modelo activo</div>
+              <select
+                id="global-model-select"
+                class="model-select-global"
+                onchange="setGlobalModel(this.value)"
+              ></select>
+              <p class="llm-model-hint">
+                Este modelo se usa en todos los chats nuevos. También podés
+                cambiarlo por sesión desde el chat. Los puntos
+                <strong>●●●</strong> indican costo relativo de tokens.
+              </p>
+            </div>
+            <div class="llm-section">
+              <div
+                class="llm-section-title"
+                style="
+                  display: flex;
+                  justify-content: space-between;
+                  align-items: center;
+                "
+              >
+                <span>Cuota real disponible</span>
+                <button
+                  class="btn-quota-refresh"
+                  id="btn-refresh-quota"
+                  onclick="fetchRealQuota()"
+                >
+                  🔄 Actualizar
+                </button>
+              </div>
+              <p class="llm-model-hint" style="margin-bottom: 8px">
+                Datos reales desde la API de GitHub Models para el modelo
+                activo.
+              </p>
+              <div id="real-quota-box">
+                <p class="llm-empty">
+                  Hacé click en Actualizar para ver la cuota real.
+                </p>
+              </div>
+            </div>
+            <div class="llm-section">
+              <div class="llm-section-title">Consumo en sesión por modelo</div>
+              <p class="llm-model-hint" style="margin-bottom: 6px">
+                Tokens usados en esta sesión del browser.
+              </p>
+              <div id="llm-limits"></div>
+            </div>
+            <div class="llm-section">
+              <div class="llm-section-title">Sesión actual</div>
+              <div id="llm-stats">
+                <p class="llm-empty">Sin actividad</p>
+              </div>
+            </div>
+            <div class="llm-section">
+              <div class="llm-section-title">Historial de requests</div>
+              <div class="llm-log" id="llm-log">
+                <p class="llm-empty">Sin actividad en esta sesión</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- VISTA: MCPs ──────────────────────────────────── -->
+        <div class="view" id="view-mcps">
+          <div class="view-header">
+            <h2>Servidores MCP</h2>
+            <div class="section-line"></div>
+            <button class="btn-view-action" onclick="openAddMcpModal()">
+              ➕ Agregar servidor
+            </button>
+          </div>
+          <div class="config-hint-box">
+            <p>
+              Los MCPs (Model Context Protocol) agregan herramientas externas. Los configurados aquí
+              se guardan en <code>.vscode/mcp.json</code> y están disponibles en VS Code Copilot.
+              Para usarlos en agentes de este panel, asignale la skill correspondiente al agente
+              o describí las herramientas en el prompt. Para Jira usá la sección
+              <strong>🔗 Jira</strong> del menú.
+            </p>
+          </div>
+          <div id="mcps-body">
+            <p class="llm-empty">Cargando MCPs...</p>
+          </div>
+        </div>
+
+        <!-- VISTA: JIRA ──────────────────────────────────── -->
+        <div class="view" id="view-jira">
+          <div class="view-header">
+            <h2>🔗 Jira — Delegación de tareas</h2>
+            <div class="section-line"></div>
+          </div>
+          <div id="jira-body">
+            <p class="llm-empty">Cargando...</p>
+          </div>
+        </div>
+
+        <!-- VISTA: CONFIGURACIÓN ─────────────────────────── -->
+        <div class="view" id="view-configuracion">
+          <div class="view-header">
+            <h2>⚙️ Configuración del Sistema</h2>
+            <div class="section-line"></div>
+          </div>
+          <div id="config-body">
+            <p class="llm-empty">Cargando configuración...</p>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <!-- Modal: Ver Prompt -->
+    <div class="modal-overlay" id="modal">
+      <div class="modal">
+        <div class="modal-header">
+          <h3 id="modal-title"></h3>
+          <button class="modal-close" onclick="closeModal()">✕</button>
+        </div>
+        <div class="modal-body">
+          <pre id="modal-content"></pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Chat con agente -->
+    <div class="modal-overlay" id="chat-modal">
+      <div class="modal chat-modal-box">
+        <div class="modal-header">
+          <h3 id="chat-modal-title"></h3>
+          <div
+            style="
+              display: flex;
+              gap: 8px;
+              align-items: center;
+              flex-wrap: wrap;
+            "
+          >
+            <select
+              id="chat-model-select"
+              class="model-select-inline"
+              onchange="setActiveChatModel(this.value)"
+            ></select>
+            <div
+              id="model-compat-indicator"
+              style="
+                display: none;
+                align-items: center;
+                gap: 5px;
+                padding: 3px 9px;
+                background: rgba(255, 255, 255, 0.04);
+                border-radius: 6px;
+                border: 1px solid var(--border);
+              "
+            ></div>
+            <div id="localstorage-warn" style="display: none"></div>
+            <button
+              class="btn-new-conversation"
+              onclick="newConversation()"
+              title="Borrar historial y empezar de cero"
+            >
+              🗑️ Nueva conversación
+            </button>
+            <button
+              class="btn-save-md"
+              id="btn-save-md"
+              onclick="saveMd()"
+              style="display: none"
+            >
+              💾 Guardar .md
+            </button>
+            <button class="modal-close" onclick="closeChatModal()">✕</button>
+          </div>
+        </div>
+        <div class="chat-messages" id="chat-messages"></div>
+        <div class="chat-input-area">
+          <div class="chat-file-bar" id="chat-file-bar" style="display: none">
+            <span class="chat-file-name" id="chat-file-name"></span>
+            <button
+              class="chat-file-remove"
+              onclick="removeAttachment()"
+              title="Quitar archivo"
+            >
+              ✕
+            </button>
+          </div>
+          <textarea
+            id="chat-input"
+            class="chat-textarea"
+            placeholder="Escribí tu mensaje o pegá el documento aquí..."
+            rows="3"
+          ></textarea>
+          <div class="chat-input-actions">
+            <div style="display: flex; align-items: center; gap: 10px">
+              <label class="btn-attach" title="Adjuntar .doc o .docx">
+                📎 Adjuntar .doc/.docx
+                <input
+                  type="file"
+                  id="file-input"
+                  accept=".doc,.docx"
+                  style="display: none"
+                  onchange="handleFileAttach(this)"
+                />
+              </label>
+              <span class="chat-hint" id="chat-hint"></span>
+            </div>
+            <button class="btn-invoke" id="btn-send" onclick="sendMessage()">
+              ⚡ Enviar
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Crear/Editar Agente -->
+    <div class="modal-overlay" id="agent-editor-modal">
+      <div class="modal agent-editor-modal-box">
+        <div class="modal-header">
+          <h3 id="agent-editor-title">Crear agente</h3>
+          <button class="modal-close" onclick="closeAgentEditorModal()">
+            ✕
+          </button>
+        </div>
+        <div class="modal-body agent-editor-body">
+          <div class="form-row">
+            <div class="form-group">
+              <label>ID del agente <span class="form-required">*</span></label>
+              <input
+                type="text"
+                id="ae-id"
+                placeholder="mi-agente"
+                autocomplete="off"
+              />
+              <span class="form-hint"
+                >Solo letras, números y guiones. Nombre de carpeta.</span
+              >
+            </div>
+            <div class="form-group" style="flex: 0 0 90px">
+              <label>Icono</label>
+              <input
+                type="text"
+                id="ae-icon"
+                placeholder="🤖"
+                maxlength="4"
+                autocomplete="off"
+              />
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Nombre visible <span class="form-required">*</span></label>
+            <input
+              type="text"
+              id="ae-name"
+              placeholder="Mi Agente Especializado"
+              autocomplete="off"
+            />
+          </div>
+          <div class="form-group">
+            <label>Descripción</label>
+            <input
+              type="text"
+              id="ae-description"
+              placeholder="Descripción del agente"
+              autocomplete="off"
+            />
+          </div>
+          <div class="form-group">
+            <label>Paso en el flujo</label>
+            <input
+              type="text"
+              id="ae-flow"
+              placeholder="PRIMER PASO — Descripción"
+              autocomplete="off"
+            />
+          </div>
+          <div class="form-group">
+            <label>Hint para el usuario</label>
+            <input
+              type="text"
+              id="ae-hint"
+              placeholder="Pegá el contenido del documento aquí."
+              autocomplete="off"
+            />
+          </div>
+          <div class="form-group">
+            <label>Skills disponibles</label>
+            <div id="ae-skills-picker" class="skills-picker-grid">
+              <!-- Cargado dinámicamente por loadSkillsPicker() -->
+              <span style="font-size:11px;color:var(--text-muted)">Cargando skills...</span>
+            </div>
+            <span class="form-hint">Hacé click para activar/desactivar. Las skills inyectan instrucciones especializadas al prompt del agente.</span>
+            <input type="hidden" id="ae-skills" />
+          </div>
+          <div class="form-group">
+            <label
+              >Prompt del sistema <span class="form-required">*</span></label
+            >
+            <textarea
+              id="ae-prompt"
+              rows="8"
+              placeholder="Sos un especialista en... Tu tarea es..."
+            ></textarea>
+          </div>
+          <div class="agent-editor-actions">
+            <button class="btn-modal-cancel" onclick="closeAgentEditorModal()">
+              Cancelar
+            </button>
+            <button class="btn-modal-save" onclick="saveAgentFromEditor()">
+              💾 Guardar agente
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Importar desde GitHub -->
+    <div class="modal-overlay" id="github-import-modal">
+      <div class="modal">
+        <div class="modal-header">
+          <h3>⬇️ Importar agente desde GitHub</h3>
+          <button class="modal-close" onclick="closeGithubImportModal()">
+            ✕
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>URL del repositorio o carpeta</label>
+            <input
+              type="url"
+              id="github-import-url"
+              placeholder="https://github.com/owner/repo o .../tree/main/agents/mi-agente"
+              autocomplete="off"
+            />
+            <span class="form-hint"
+              >Para repos públicos no hace falta token.</span
+            >
+          </div>
+          <div class="form-group">
+            <label
+              >Token de GitHub
+              <em style="font-weight: 400; color: var(--text-muted)"
+                >(solo para repos privados)</em
+              ></label
+            >
+            <input
+              type="password"
+              id="github-import-token"
+              placeholder="ghp_..."
+              autocomplete="off"
+            />
+            <span class="form-hint"
+              >Personal Access Token con scope <code>repo</code>. No se guarda
+              en disco.</span
+            >
+          </div>
+          <div id="github-import-status" style="margin-top: 12px"></div>
+          <div class="agent-editor-actions">
+            <button class="btn-modal-cancel" onclick="closeGithubImportModal()">
+              Cancelar
+            </button>
+            <button
+              class="btn-modal-save"
+              id="btn-do-github-import"
+              onclick="doGithubImport()"
+            >
+              ⬇️ Importar
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Agregar MCP -->
+    <div class="modal-overlay" id="mcp-add-modal">
+      <div class="modal">
+        <div class="modal-header">
+          <h3>➕ Agregar servidor MCP</h3>
+          <button class="modal-close" onclick="closeMcpAddModal()">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label
+              >Nombre del servidor <span class="form-required">*</span></label
+            >
+            <input
+              type="text"
+              id="mcp-name"
+              placeholder="github"
+              autocomplete="off"
+            />
+          </div>
+          <div class="form-group">
+            <label>Comando <span class="form-required">*</span></label>
+            <input
+              type="text"
+              id="mcp-command"
+              placeholder="npx"
+              autocomplete="off"
+            />
+          </div>
+          <div class="form-group">
+            <label>Argumentos (uno por línea)</label>
+            <textarea
+              id="mcp-args"
+              rows="3"
+              placeholder="-y&#10;@modelcontextprotocol/server-github"
+            ></textarea>
+          </div>
+          <div class="form-group">
+            <label>Variables de entorno (CLAVE=VALOR, una por línea)</label>
+            <textarea
+              id="mcp-env"
+              rows="3"
+              placeholder="GITHUB_TOKEN=${input:githubToken}"
+            ></textarea>
+          </div>
+          <div class="agent-editor-actions">
+            <button class="btn-modal-cancel" onclick="closeMcpAddModal()">
+              Cancelar
+            </button>
+            <button class="btn-modal-save" onclick="saveMcpServer()">
+              💾 Guardar
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Token Setup Wizard -->
+    <div
+      class="modal-overlay"
+      id="token-wizard-modal"
+      style="display: none; z-index: 10000"
+    >
+      <div class="modal token-wizard-box" style="max-width: 500px">
+        <div class="modal-header">
+          <h3>🔐 Configurar GitHub Token</h3>
+          <button class="modal-close" onclick="closeTokenWizard()">✕</button>
+        </div>
+        <div class="modal-body" id="token-wizard-body">
+          <!-- Contenido dinámico -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Viewer de output -->
+    <div class="modal-overlay" id="output-viewer-modal">
+      <div class="modal output-viewer-modal-box">
+        <div class="modal-header">
+          <h3 id="output-viewer-title">Output</h3>
+          <div style="display: flex; gap: 8px; align-items: center">
+            <button class="btn-inspector-action" onclick="copyOutputContent()">
+              📋 Copiar
+            </button>
+            <button
+              class="btn-inspector-action"
+              style="color: var(--accent3)"
+              onclick="deleteCurrentOutput()"
+            >
+              🗑️ Eliminar
+            </button>
+            <button class="modal-close" onclick="closeOutputViewer()">✕</button>
+          </div>
+        </div>
+        <div class="modal-body output-viewer-body">
+          <div id="output-viewer-content"></div>
+        </div>
+      </div>
+    </div>
+
+    <script src="panel.js?v=5"></script>
+  </body>
+</html>

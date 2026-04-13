@@ -1,0 +1,37 @@
+# Credenciales - NUNCA subir
+.env
+
+# Historial de chats (datos personales, persistencia local)
+chats/
+
+# Dependencias
+node_modules/
+
+# Outputs generados (contienen datos reales, no subir)
+outputs/
+
+# Archivos de entrada (pueden contener docs confidenciales)
+inputs/
+
+# VS Code / MCP (configuración local)
+.vscode/
+
+# Sistema
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+npm-debug.log*
+
+# Presentaciones y generador (archivos locales)
+*.pptx
+generate_presentation.py
+
+# Build outputs
+build/
+*.exe
+
+# Playwright MCP cache (datos de sesiones locales)
+.playwright-mcp/
