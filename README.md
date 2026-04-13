@@ -4,12 +4,18 @@
 
 ## Instalacion
 
-### Requisitos
+### Opcion A — Ejecutable (recomendada)
 
-- [Node.js v16+](https://nodejs.org)
-- Una cuenta de GitHub (gratuita)
+1. Descargar `control-de-agentes.exe` (55 MB)
+2. Copiar a cualquier carpeta
+3. Doble clic en el archivo
+4. Se abre automaticamente en http://localhost:3000
 
-### Pasos
+No requiere instalar Node.js ni ningun otro software. Al primer inicio se crean automaticamente las carpetas necesarias junto al .exe.
+
+### Opcion B — Desde el codigo fuente
+
+**Requisitos:** [Node.js v16+](https://nodejs.org) + cuenta de GitHub (gratuita)
 
 ```bash
 git clone https://github.com/lopezrossialan/control-de-agentes.git
@@ -116,6 +122,7 @@ Desde la seccion MCPs podes configurar servidores [Model Context Protocol](https
 
 ```
 control-de-agentes/
+  control-de-agentes.exe     # Ejecutable portable (doble clic)
   server.js                  # Backend Express (API + streaming)
   package.json               # Dependencias
   .env                       # Tokens locales (NO se sube)
@@ -143,17 +150,19 @@ control-de-agentes/
 
 **Token no funciona:** Regenerar en [github.com/settings/tokens](https://github.com/settings/tokens) y pegarlo en Configuracion.
 
-**Chromium no instala (para Inspector):** `npx playwright install chromium`
+**Inspector no detecta navegador:** El Inspector usa Edge o Chrome del sistema. Si no hay ninguno disponible: `npx playwright install chromium`
 
 ---
 
-## Build ejecutable (opcional)
+## Build ejecutable (para desarrollo)
+
+Si modificas el codigo fuente y queres regenerar el .exe:
 
 ```bash
 npm run build
 ```
 
-Genera un `.exe` portable en `build/` que no requiere Node.js instalado.
+Genera `control-de-agentes.exe` en `build/`. El .exe incluye Node.js v20, el panel web completo, y usa Edge/Chrome del sistema para el Inspector.
 
 ---
 
