@@ -345,6 +345,74 @@ function renderWorkflow() {
   el.innerHTML = html;
 }
 
+// ─── Inputs (archivos de referencia) ─────────────────────────────────────────
+
+async function loadInputFiles() {
+  const list = document.getElementById("inputs-list");
+  if (!list) return;
+  try {
+    const res = await fetch(`${API_BASE}/inputs`);
+    const data = await res.json();
+    const files = data.files || [];
+    if (files.length === 0) {
+      list.innerHTML = `<p class="llm-empty">No hay archivos de referencia. Subí archivos para que los agentes puedan consultarlos.</p>`;
+      return;
+    }
+    list.innerHTML = files.map((f) => {
+      const ext = f.name.split(".").pop().toLowerCase();
+      const icon = { txt: "📄", md: "📝", json: "📋", csv: "📊", xml: "📰", html: "🌐", js: "⚡", py: "🐍", pdf: "📕", doc: "📘", docx: "📘" }[ext] || "📎";
+      const size = f.size < 1024 ? `${f.size} B` : f.size < 1024 * 1024 ? `${(f.size / 1024).toFixed(1)} KB` : `${(f.size / (1024 * 1024)).toFixed(1)} MB`;
+      return `<div class="input-file-row">
+        <span class="input-file-icon">${icon}</span>
+        <span class="input-file-name" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</span>
+        <span class="input-file-size">${size}</span>
+        <button class="input-file-delete" onclick="deleteInputFile('${escapeHtml(f.name)}')" title="Eliminar archivo">🗑️</button>
+      </div>`;
+    }).join("");
+  } catch {
+    list.innerHTML = `<p class="llm-empty">Error al cargar archivos.</p>`;
+  }
+}
+
+async function uploadInputFile(input) {
+  const files = input.files;
+  if (!files || files.length === 0) return;
+  let uploaded = 0;
+  for (const file of files) {
+    const form = new FormData();
+    form.append("file", file);
+    try {
+      const res = await fetch(`${API_BASE}/inputs/upload`, { method: "POST", body: form });
+      const data = await res.json();
+      if (res.ok) uploaded++;
+      else showToast(`❌ ${file.name}: ${data.error}`);
+    } catch {
+      showToast(`❌ Error al subir ${file.name}`);
+    }
+  }
+  input.value = "";
+  if (uploaded > 0) {
+    showToast(`✅ ${uploaded} archivo(s) subido(s)`);
+    loadInputFiles();
+  }
+}
+
+async function deleteInputFile(name) {
+  if (!confirm(`¿Eliminar "${name}" de inputs?`)) return;
+  try {
+    const res = await fetch(`${API_BASE}/inputs/${encodeURIComponent(name)}`, { method: "DELETE" });
+    if (res.ok) {
+      showToast("✅ Archivo eliminado");
+      loadInputFiles();
+    } else {
+      const data = await res.json();
+      showToast(`❌ ${data.error}`);
+    }
+  } catch {
+    showToast("❌ Error al eliminar archivo");
+  }
+}
+
 // ─── Navegación de vistas ───────────────────────────────────────────────
 
 function switchView(view, btn) {
@@ -809,6 +877,130 @@ let chatHistory = [];
 let lastAssistantContent = "";
 let attachedFileText = null;
 let attachedFileName = null;
+let chatConversations = []; // [{id, title, history, lastContent}]
+let activeConvId = null;
+
+function generateConvId() {
+  return "conv_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6);
+}
+
+function convTitle(conv, idx) {
+  if (conv.title) return conv.title;
+  if (conv.history && conv.history.length > 0) {
+    const first = conv.history.find((m) => m.role === "user");
+    if (first) {
+      const txt = (first.display || first.content || "").slice(0, 28);
+      return txt + (txt.length >= 28 ? "…" : "");
+    }
+  }
+  return "Conversación " + (idx + 1);
+}
+
+function renderChatTabs() {
+  const bar = document.getElementById("chat-tabs-bar");
+  if (!bar) return;
+  if (chatConversations.length <= 1) {
+    bar.style.display = "none";
+    return;
+  }
+  bar.style.display = "flex";
+  bar.innerHTML = chatConversations
+    .map(
+      (conv, i) => `
+    <div class="chat-tab ${conv.id === activeConvId ? "active" : ""}" onclick="switchConversation('${conv.id}')">
+      <span>${escapeHtml(convTitle(conv, i))}</span>
+      <span class="chat-tab-close" onclick="event.stopPropagation();deleteConversation('${conv.id}')" title="Cerrar conversación">✕</span>
+    </div>`,
+    )
+    .join("");
+}
+
+function switchConversation(convId) {
+  if (convId === activeConvId) return;
+  // Guardar datos de la conversación actual
+  const current = chatConversations.find((c) => c.id === activeConvId);
+  if (current) {
+    current.history = chatHistory;
+    current.lastContent = lastAssistantContent;
+  }
+  // Cambiar
+  const conv = chatConversations.find((c) => c.id === convId);
+  if (!conv) return;
+  activeConvId = convId;
+  chatHistory = conv.history || [];
+  lastAssistantContent = conv.lastContent || "";
+
+  const agent = AGENTS.find((a) => a.id === activeChatAgentId);
+  if (chatHistory.length > 0) {
+    renderChatHistory(chatHistory, agent ? agent.name : "", agent ? agent.hint : "");
+  } else {
+    document.getElementById("chat-messages").innerHTML = `
+      <div class="chat-msg assistant">
+        <div class="msg-bubble"><p>Hola! Soy el agente <strong>${agent ? agent.name : "el agente"}</strong>. ${agent ? agent.hint : ""}</p></div>
+      </div>`;
+  }
+  document.getElementById("btn-save-md").style.display = lastAssistantContent ? "inline-flex" : "none";
+  renderChatTabs();
+}
+
+function deleteConversation(convId) {
+  if (chatConversations.length <= 1) return;
+  if (!confirm("¿Eliminar esta conversación?")) return;
+  const idx = chatConversations.findIndex((c) => c.id === convId);
+  if (idx === -1) return;
+  chatConversations.splice(idx, 1);
+  if (activeConvId === convId) {
+    const newIdx = Math.min(idx, chatConversations.length - 1);
+    activeConvId = chatConversations[newIdx].id;
+    chatHistory = chatConversations[newIdx].history || [];
+    lastAssistantContent = chatConversations[newIdx].lastContent || "";
+    const agent = AGENTS.find((a) => a.id === activeChatAgentId);
+    if (chatHistory.length > 0) {
+      renderChatHistory(chatHistory, agent ? agent.name : "", agent ? agent.hint : "");
+    } else {
+      document.getElementById("chat-messages").innerHTML = `
+        <div class="chat-msg assistant">
+          <div class="msg-bubble"><p>Hola! Soy el agente <strong>${agent ? agent.name : "el agente"}</strong>. ${agent ? agent.hint : ""}</p></div>
+        </div>`;
+    }
+    document.getElementById("btn-save-md").style.display = lastAssistantContent ? "inline-flex" : "none";
+  }
+  renderChatTabs();
+  autoSaveConversations();
+  showToast("🗑️ Conversación eliminada");
+}
+
+async function saveChatConversations(agentId) {
+  // Actualizar la conversación activa con el estado actual
+  const current = chatConversations.find((c) => c.id === activeConvId);
+  if (current) {
+    current.history = chatHistory;
+    current.lastContent = lastAssistantContent;
+  }
+  const payload = { conversations: chatConversations, activeConvId, savedAt: Date.now() };
+  // localStorage
+  try {
+    const str = JSON.stringify(payload);
+    if (str.length <= CHAT_STORAGE_MAX_BYTES) {
+      localStorage.setItem(chatStorageKey(agentId), str);
+      checkLocalStorageUsage();
+    }
+  } catch (e) {
+    if (e.name === "QuotaExceededError" || e.code === 22) showLocalStorageFullWarning();
+  }
+  // Servidor
+  try {
+    await fetch(`${API_BASE}/chats/${encodeURIComponent(agentId)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch (_) {}
+}
+
+function autoSaveConversations() {
+  if (activeChatAgentId) saveChatConversations(activeChatAgentId);
+}
 
 // ─── Manejo de archivo adjunto ────────────────────────────────────────────
 
@@ -893,7 +1085,13 @@ function renderAgents() {
         <button class="btn-secondary" style="color:var(--accent3)" onclick="deleteAgent('${agent.id}')" title="Eliminar agente">🗑️</button>
       </div>
     </div>`;
-  }).join("");
+  }).join("") + `
+    <div class="agent-card agent-card-create" onclick="openCreateAgentModal()" title="Crear un nuevo agente">
+      <div class="create-inner">
+        <span class="create-icon">➕</span>
+        <span class="create-label">Crear agente</span>
+      </div>
+    </div>`;
 }
 
 // ─── Skills picker ──────────────────────────────────────────────────────────
@@ -1064,6 +1262,9 @@ function promptClearStorage() {
   if (activeChatAgentId) {
     chatHistory = [];
     lastAssistantContent = "";
+    const convId = generateConvId();
+    chatConversations = [{ id: convId, title: "", history: [], lastContent: "" }];
+    activeConvId = convId;
     const agent = AGENTS.find((a) => a.id === activeChatAgentId);
     if (agent) {
       document.getElementById("chat-messages").innerHTML = `
@@ -1072,6 +1273,7 @@ function promptClearStorage() {
               </div>`;
     }
     document.getElementById("btn-save-md").style.display = "none";
+    renderChatTabs();
   }
 
   const warnEl = document.getElementById("localstorage-warn");
@@ -1145,22 +1347,40 @@ async function openChat(agentId) {
     const res = await fetch(`${API_BASE}/chats/${encodeURIComponent(agentId)}`);
     if (res.ok) {
       const data = await res.json();
-      if (data.history && data.history.length > 0) saved = data;
+      if ((data.conversations && data.conversations.length > 0) ||
+          (data.history && data.history.length > 0)) saved = data;
     }
   } catch (_) {}
 
   if (!saved) saved = loadChatFromStorage(agentId);
 
-  if (saved && Array.isArray(saved.history) && saved.history.length > 0) {
-    chatHistory = saved.history;
-    lastAssistantContent = saved.lastContent || "";
+  // Migrar formato viejo o cargar nuevo formato de conversaciones
+  if (saved && saved.conversations && saved.conversations.length > 0) {
+    chatConversations = saved.conversations;
+    activeConvId = (saved.activeConvId && chatConversations.find((c) => c.id === saved.activeConvId))
+      ? saved.activeConvId
+      : chatConversations[chatConversations.length - 1].id;
+  } else if (saved && Array.isArray(saved.history) && saved.history.length > 0) {
+    // Migrar formato viejo a nuevo
+    const convId = generateConvId();
+    chatConversations = [{ id: convId, title: "", history: saved.history, lastContent: saved.lastContent || "" }];
+    activeConvId = convId;
+  } else {
+    const convId = generateConvId();
+    chatConversations = [{ id: convId, title: "", history: [], lastContent: "" }];
+    activeConvId = convId;
+  }
+
+  const activeConv = chatConversations.find((c) => c.id === activeConvId);
+  chatHistory = activeConv.history || [];
+  lastAssistantContent = activeConv.lastContent || "";
+
+  if (chatHistory.length > 0) {
     renderChatHistory(chatHistory, agent.name, agent.hint);
     document.getElementById("btn-save-md").style.display = lastAssistantContent
       ? "inline-flex"
       : "none";
   } else {
-    chatHistory = [];
-    lastAssistantContent = "";
     document.getElementById("chat-messages").innerHTML = `
           <div class="chat-msg assistant">
             <div class="msg-bubble"><p>Hola! Soy el agente <strong>${agent.name}</strong>. ${agent.hint} También podés adjuntar un archivo <strong>.doc o .docx</strong> directamente.</p></div>
@@ -1168,35 +1388,39 @@ async function openChat(agentId) {
     document.getElementById("btn-save-md").style.display = "none";
   }
 
+  renderChatTabs();
   checkLocalStorageUsage();
   updateCompatIndicator();
   setTimeout(() => document.getElementById("chat-input").focus(), 100);
 }
 
 function closeChatModal() {
-  // Guardar historial antes de cerrar
-  if (activeChatAgentId && chatHistory.length > 0) {
-    saveChatToStorage(activeChatAgentId, chatHistory, lastAssistantContent);
+  // Guardar conversaciones antes de cerrar
+  if (activeChatAgentId && chatConversations.length > 0) {
+    saveChatConversations(activeChatAgentId);
   }
   document.getElementById("chat-modal").style.display = "none";
+  document.getElementById("chat-tabs-bar").style.display = "none";
   activeChatAgentId = null;
   chatHistory = [];
   lastAssistantContent = "";
+  chatConversations = [];
+  activeConvId = null;
   removeAttachment();
 }
 
 function newConversation() {
-  if (chatHistory.length === 0) return; // ya está vacío
-  const confirmed = confirm(
-    "¿Empezar una nueva conversación?\n\nEl historial actual se borrará permanentemente.\nLos archivos guardados en /outputs/ no se ven afectados.",
-  );
-  if (!confirmed) return;
-
-  if (activeChatAgentId) {
-    localStorage.removeItem(chatStorageKey(activeChatAgentId));
-    // Borrar también del servidor
-    fetch(`${API_BASE}/chats/${encodeURIComponent(activeChatAgentId)}`, { method: "DELETE" }).catch(() => {});
+  // Guardar datos de la conversación actual
+  const current = chatConversations.find((c) => c.id === activeConvId);
+  if (current) {
+    current.history = chatHistory;
+    current.lastContent = lastAssistantContent;
   }
+
+  // Crear nueva conversación
+  const newConv = { id: generateConvId(), title: "", history: [], lastContent: "" };
+  chatConversations.push(newConv);
+  activeConvId = newConv.id;
   chatHistory = [];
   lastAssistantContent = "";
 
@@ -1206,8 +1430,9 @@ function newConversation() {
         <div class="msg-bubble"><p>Nueva conversación iniciada. Soy <strong>${agent ? agent.name : "el agente"}</strong>. ${agent ? agent.hint : ""}</p></div>
       </div>`;
   document.getElementById("btn-save-md").style.display = "none";
-  checkLocalStorageUsage();
-  showToast("🗑️ Conversación reiniciada");
+  renderChatTabs();
+  autoSaveConversations();
+  showToast("💬 Nueva conversación creada");
 }
 
 function appendUserMessage(text) {
@@ -1329,7 +1554,7 @@ async function sendMessage() {
               );
             }
             // Guardar en localStorage después de cada respuesta completa
-            saveChatToStorage(activeChatAgentId, chatHistory, data.fullContent);
+            saveChatConversations(activeChatAgentId);
           }
         } catch (_) {}
       }
@@ -1881,6 +2106,7 @@ document.addEventListener("DOMContentLoaded", () => {
   loadAgents();
   loadGlobalSkills();
   loadOutputsCount();
+  loadInputFiles();
   checkServerStatus();
   loadConfig(); // init badge + wizard redirect
   document.getElementById("global-model-select").innerHTML =
@@ -2650,8 +2876,11 @@ async function saveAgentFromEditor() {
       showToast(`✅ Agente "${name}" ${isEdit ? "actualizado" : "creado"}`);
       closeAgentEditorModal();
       await loadAgents();
+      // Redirigir al menú de agentes tras crear/editar
+      switchView("agentes", document.querySelector('[data-view="agentes"]'));
     } else showToast(`❌ ${data.error}`);
-  } catch {
+  } catch (err) {
+    console.error("saveAgentFromEditor error:", err);
     showToast("❌ Error al guardar el agente");
   }
 }
@@ -2665,7 +2894,7 @@ async function deleteAgent(agentId) {
   )
     return;
   try {
-    const res = await fetch(`${API_BASE}/agents/${agentId}`, {
+    const res = await fetch(`${API_BASE}/agents/${encodeURIComponent(agentId)}`, {
       method: "DELETE",
     });
     const data = await res.json();
@@ -2673,8 +2902,21 @@ async function deleteAgent(agentId) {
       showToast(`✅ Agente "${agentId}" eliminado`);
       await loadAgents();
     } else showToast(`❌ ${data.error}`);
-  } catch {
-    showToast("❌ Error al eliminar el agente");
+  } catch (err) {
+    console.error("deleteAgent error:", err);
+    // Si el agente ya no existe en la lista, fue eliminado correctamente
+    const stillExists = _allAgents.find((a) => a.id === agentId);
+    if (!stillExists) {
+      showToast(`✅ Agente "${agentId}" eliminado`);
+    } else {
+      await loadAgents();
+      const afterReload = _allAgents.find((a) => a.id === agentId);
+      if (!afterReload) {
+        showToast(`✅ Agente "${agentId}" eliminado`);
+      } else {
+        showToast("❌ Error al eliminar el agente");
+      }
+    }
   }
 }
 

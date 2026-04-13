@@ -48,7 +48,6 @@ packageJson.bin = "server.js";
 packageJson.pkg = {
   assets: [
     "panel/**/*",
-    "agents/**/*",
     "config/**/*",
     "playwright-inspector/**/*",
     "node_modules/mammoth/**/*",

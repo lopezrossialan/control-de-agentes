@@ -96,6 +96,9 @@
           <div class="view-header">
             <h2>Flujo de trabajo</h2>
             <div class="section-line"></div>
+            <button class="btn-view-action" onclick="openCreateAgentModal()">
+              ➕ Crear agente
+            </button>
           </div>
           <div class="workflow-section">
             <div class="workflow" id="workflow-inner">
@@ -105,6 +108,26 @@
               💡 Hacé click en un paso del flujo para abrir el chat
               directamente. También podés adjuntar un
               <strong>.doc/.docx</strong> desde cualquier agente.
+            </div>
+          </div>
+
+          <!-- Archivos de referencia (inputs/) -->
+          <div class="view-header" style="margin-top: 48px">
+            <h2>📂 Archivos de referencia</h2>
+            <div class="section-line"></div>
+            <label class="btn-view-action" style="cursor:pointer">
+              📎 Subir archivo
+              <input type="file" id="input-file-upload" style="display:none" onchange="uploadInputFile(this)" multiple />
+            </label>
+          </div>
+          <div class="inputs-section">
+            <div class="inputs-hint">
+              Los archivos en la carpeta <code>inputs/</code> se inyectan automáticamente como contexto
+              en todas las conversaciones. Subí documentos de referencia, specs, o datos que los agentes
+              necesiten consultar.
+            </div>
+            <div class="inputs-list" id="inputs-list">
+              <p class="llm-empty">Cargando...</p>
             </div>
           </div>
 
@@ -238,9 +261,6 @@
             <h2>Agentes</h2>
             <div class="section-line"></div>
             <div style="display: flex; gap: 8px; flex-wrap: wrap">
-              <button class="btn-view-action" onclick="openCreateAgentModal()">
-                ➕ Crear agente
-              </button>
               <button
                 class="btn-view-action secondary"
                 onclick="openImportGithubModal()"
@@ -463,9 +483,9 @@
             <button
               class="btn-new-conversation"
               onclick="newConversation()"
-              title="Borrar historial y empezar de cero"
+              title="Abrir una nueva conversación (la actual se conserva)"
             >
-              🗑️ Nueva conversación
+              ➕ Nueva conversación
             </button>
             <button
               class="btn-save-md"
@@ -478,6 +498,7 @@
             <button class="modal-close" onclick="closeChatModal()">✕</button>
           </div>
         </div>
+        <div class="chat-tabs-bar" id="chat-tabs-bar"></div>
         <div class="chat-messages" id="chat-messages"></div>
         <div class="chat-input-area">
           <div class="chat-file-bar" id="chat-file-bar" style="display: none">

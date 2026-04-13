@@ -1,1 +1,6 @@
-[]
+[
+  "testcase-gherkin",
+  "testcase-general",
+  "doc-interpreter",
+  "pepe"
+]

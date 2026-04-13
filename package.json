@@ -21,5 +21,23 @@
   },
   "devDependencies": {
     "docx": "^9.6.1"
+  },
+  "bin": "server.js",
+  "pkg": {
+    "assets": [
+      "panel/**/*",
+      "agents/**/*",
+      "config/**/*",
+      "playwright-inspector/**/*",
+      "node_modules/mammoth/**/*",
+      "node_modules/word-extractor/**/*",
+      "node_modules/pdf-parse/**/*"
+    ],
+    "targets": [
+      "node20-win-x64"
+    ],
+    "scripts": [
+      "server.js"
+    ]
   }
 }

@@ -2,16 +2,34 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 
+// ─── Manejo de errores global (evita que la ventana se cierre sin mensaje) ───
+const IS_PKG = typeof process.pkg !== "undefined";
+
+if (IS_PKG) {
+  process.on("uncaughtException", (err) => {
+    console.error("\n❌ Error fatal:", err.message);
+    console.error(err.stack);
+    console.log("\nPresioná ENTER para cerrar...");
+    process.stdin.resume();
+    process.stdin.once("data", () => process.exit(1));
+  });
+  process.on("unhandledRejection", (reason) => {
+    console.error("\n❌ Error no manejado:", reason);
+    console.log("\nPresioná ENTER para cerrar...");
+    process.stdin.resume();
+    process.stdin.once("data", () => process.exit(1));
+  });
+}
+
 // ─── Base dirs: pkg empaqueta en snapshot virtual (read-only) ────────────────
 // DATA_DIR = carpeta real junto al .exe (writable) para agents, config, chats, etc.
 // APP_DIR  = __dirname (snapshot dentro del .exe) para archivos estaticos (panel/)
-const IS_PKG = typeof process.pkg !== "undefined";
 const DATA_DIR = IS_PKG ? path.dirname(process.execPath) : __dirname;
 const APP_DIR = __dirname;
 
 // En modo .exe: crear carpetas necesarias junto al ejecutable
 if (IS_PKG) {
-  for (const d of ["agents", "config", "config/skills", "chats", "outputs"]) {
+  for (const d of ["agents", "config", "config/skills", "chats", "outputs", "inputs"]) {
     const p = path.join(DATA_DIR, d);
     if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
   }
@@ -33,6 +51,24 @@ if (IS_PKG) {
       if (!fs.existsSync(dest)) fs.copyFileSync(path.join(srcSkills, sk), dest);
     }
   }
+
+  // Crear acceso directo en el Escritorio (solo la primera vez)
+  try {
+    const desktopPath = path.join(os.homedir(), "Desktop");
+    const shortcutPath = path.join(desktopPath, "Control de Agentes.lnk");
+    if (!fs.existsSync(shortcutPath) && fs.existsSync(desktopPath)) {
+      const exePath = process.execPath;
+      const workDir = path.dirname(exePath);
+      const ps = `$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('${shortcutPath.replace(/'/g, "''")}'); $s.TargetPath = '${exePath.replace(/'/g, "''")}'; $s.WorkingDirectory = '${workDir.replace(/'/g, "''")}'; $s.Description = 'Control de Agentes - Panel de IA'; $s.Save()`;
+      require("child_process").execSync(
+        `powershell -NoProfile -Command "${ps.replace(/"/g, '\\"')}"`,
+        { stdio: "ignore", timeout: 5000 },
+      );
+      console.log("   ✅ Acceso directo creado en el Escritorio");
+    }
+  } catch (e) {
+    console.log("   ℹ️  No se pudo crear acceso directo:", e.message);
+  }
 }
 
 require("dotenv").config({ path: path.join(DATA_DIR, ".env") });
@@ -46,17 +82,22 @@ const { inspectUrl } = require("./playwright-inspector/inspector");
 
 // ─── Abrir el navegador automáticamente al iniciar ───────────────────────────
 function openBrowser(url) {
-  const { exec } = require("child_process");
+  const { exec, spawn } = require("child_process");
   const platform = process.platform;
-  const cmd =
-    platform === "win32"
-      ? `start "" "${url}"`
-      : platform === "darwin"
-        ? `open "${url}"`
-        : `xdg-open "${url}"`;
-  exec(cmd, (err) => {
-    if (err) console.log(`   Abrí manualmente: ${url}`);
-  });
+  if (platform === "win32") {
+    // En Windows, usar spawn con 'cmd' para mayor compatibilidad con pkg
+    const child = spawn("cmd", ["/c", "start", "", url], {
+      detached: true,
+      stdio: "ignore",
+    });
+    child.unref();
+    child.on("error", () => console.log(`   Abrí manualmente: ${url}`));
+  } else {
+    const cmd = platform === "darwin" ? `open "${url}"` : `xdg-open "${url}"`;
+    exec(cmd, (err) => {
+      if (err) console.log(`   Abrí manualmente: ${url}`);
+    });
+  }
 }
 
 // ─── Upload (doc/docx/pdf) ───────────────────────────────────────────────────
@@ -586,9 +627,9 @@ app.post("/api/chat", async (req, res) => {
       skillBlocks.push(`\n\n---\n## Skill: ${safeSkillId}\n${skillContent.trim()}`);
     }
   }
-  const finalSystemPrompt = skillBlocks.length > 0
-    ? systemPrompt + skillBlocks.join("")
-    : systemPrompt;
+  const finalSystemPrompt = systemPrompt
+    + (skillBlocks.length > 0 ? skillBlocks.join("") : "")
+    + getInputsContext();
 
   const model = ALLOWED_MODELS.has(requestedModel)
     ? requestedModel
@@ -1449,6 +1490,102 @@ app.post("/api/jira/bug", async (req, res) => {
   }
 });
 
+// ─── Inputs (archivos de referencia para agentes) ────────────────────────────
+const INPUTS_DIR = path.join(DATA_DIR, "inputs");
+if (!fs.existsSync(INPUTS_DIR)) fs.mkdirSync(INPUTS_DIR, { recursive: true });
+
+const inputUpload = multer({
+  dest: os.tmpdir(),
+  limits: { fileSize: 50 * 1024 * 1024 },
+});
+
+// GET /api/inputs — listar archivos en inputs/
+app.get("/api/inputs", (req, res) => {
+  try {
+    if (!fs.existsSync(INPUTS_DIR)) return res.json({ files: [] });
+    const files = fs.readdirSync(INPUTS_DIR).filter((f) => !f.startsWith(".")).map((f) => {
+      const stat = fs.statSync(path.join(INPUTS_DIR, f));
+      return { name: f, size: stat.size, modified: stat.mtime.toISOString() };
+    });
+    res.json({ files });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/inputs/upload — subir archivo a inputs/
+app.post("/api/inputs/upload", inputUpload.single("file"), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "No se envió archivo" });
+  const safeName = req.file.originalname.replace(/[^a-zA-Z0-9._\-\s()]/g, "_");
+  const dest = path.join(INPUTS_DIR, safeName);
+  if (!isSafePath(INPUTS_DIR, dest))
+    return res.status(403).json({ error: "Nombre de archivo no permitido" });
+  try {
+    fs.copyFileSync(req.file.path, dest);
+    fs.unlinkSync(req.file.path);
+    res.json({ ok: true, name: safeName });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/inputs/:name — eliminar archivo de inputs/
+app.delete("/api/inputs/:name", (req, res) => {
+  const safeName = path.basename(req.params.name);
+  const filePath = path.join(INPUTS_DIR, safeName);
+  if (!isSafePath(INPUTS_DIR, filePath))
+    return res.status(403).json({ error: "No permitido" });
+  if (!fs.existsSync(filePath))
+    return res.status(404).json({ error: "Archivo no encontrado" });
+  try {
+    fs.unlinkSync(filePath);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/inputs/:name/content — leer contenido de un archivo de inputs (texto)
+app.get("/api/inputs/:name/content", (req, res) => {
+  const safeName = path.basename(req.params.name);
+  const filePath = path.join(INPUTS_DIR, safeName);
+  if (!isSafePath(INPUTS_DIR, filePath))
+    return res.status(403).json({ error: "No permitido" });
+  if (!fs.existsSync(filePath))
+    return res.status(404).json({ error: "Archivo no encontrado" });
+  try {
+    const content = fs.readFileSync(filePath, "utf8");
+    res.json({ name: safeName, content });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Helper: leer todos los inputs como contexto para inyectar en el prompt
+function getInputsContext() {
+  if (!fs.existsSync(INPUTS_DIR)) return "";
+  const files = fs.readdirSync(INPUTS_DIR).filter((f) => !f.startsWith("."));
+  if (files.length === 0) return "";
+  const blocks = [];
+  for (const f of files) {
+    const fp = path.join(INPUTS_DIR, f);
+    try {
+      const stat = fs.statSync(fp);
+      // Solo archivos de texto de hasta 500KB
+      if (stat.size > 500 * 1024) {
+        blocks.push(`\n### Archivo: ${f}\n(Archivo demasiado grande para inyectar: ${(stat.size / 1024).toFixed(0)} KB)`);
+        continue;
+      }
+      const content = fs.readFileSync(fp, "utf8");
+      blocks.push(`\n### Archivo: ${f}\n\`\`\`\n${content}\n\`\`\``);
+    } catch {
+      // No es texto legible, skip
+    }
+  }
+  if (blocks.length === 0) return "";
+  return `\n\n---\n## Archivos de referencia (inputs/)\nEl usuario tiene los siguientes archivos de referencia disponibles. Usalos como contexto si es relevante para la consulta:\n${blocks.join("\n")}`;
+}
+
 // ─── Chat History (persistencia local en disco) ──────────────────────────────
 const CHATS_DIR = path.join(DATA_DIR, "chats");
 
@@ -1474,21 +1611,20 @@ app.get("/api/chats/:agentId", (req, res) => {
 
 // POST /api/chats/:agentId — guardar historial de un agente
 app.post("/api/chats/:agentId", (req, res) => {
-  const { history, lastContent } = req.body;
-  if (!Array.isArray(history))
-    return res.status(400).json({ error: "history debe ser un array" });
+  const { history, lastContent, conversations, activeConvId } = req.body;
+  if (!Array.isArray(history) && !Array.isArray(conversations))
+    return res.status(400).json({ error: "Se requiere history o conversations" });
   const chatFile = getChatFile(req.params.agentId);
   if (!isSafePath(CHATS_DIR, chatFile))
     return res.status(403).json({ error: "No permitido" });
   try {
     if (!fs.existsSync(CHATS_DIR)) fs.mkdirSync(CHATS_DIR, { recursive: true });
+    const data = conversations
+      ? { conversations, activeConvId: activeConvId || null, savedAt: new Date().toISOString() }
+      : { history, lastContent: lastContent || "", savedAt: new Date().toISOString() };
     fs.writeFileSync(
       chatFile,
-      JSON.stringify(
-        { history, lastContent: lastContent || "", savedAt: new Date().toISOString() },
-        null,
-        2,
-      ),
+      JSON.stringify(data, null, 2),
       "utf8",
     );
     res.json({ ok: true });
@@ -1523,7 +1659,7 @@ app.delete("/api/chats", (req, res) => {
 
 // ─── Arranque del servidor ───────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`\n🛸 Mission Control corriendo en http://localhost:${PORT}`);
   console.log(`   Panel: http://localhost:${PORT}/index.html\n`);
 
@@ -1536,6 +1672,24 @@ app.listen(PORT, () => {
     );
   }
 
+  if (IS_PKG) {
+    console.log("   (No cierres esta ventana mientras uses el panel)\n");
+  }
+
   // Abrir el navegador automáticamente
   setTimeout(() => openBrowser(`http://localhost:${PORT}`), 1200);
+});
+
+server.on("error", (err) => {
+  if (err.code === "EADDRINUSE") {
+    console.error(`\n❌ El puerto ${PORT} ya está en uso.`);
+    console.error("   Cerrá la otra instancia o usá PORT=XXXX para cambiar.\n");
+  } else {
+    console.error("\n❌ Error al iniciar el servidor:", err.message);
+  }
+  if (IS_PKG) {
+    console.log("Presioná ENTER para cerrar...");
+    process.stdin.resume();
+    process.stdin.once("data", () => process.exit(1));
+  }
 });
