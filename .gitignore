@@ -33,9 +33,7 @@ generate_manual.py
 
 # Build outputs
 build/
-# Excluir .exe en subcarpetas pero permitir el de la raiz
-# (control-de-agentes.exe se incluye en el repo para descarga directa)
-build/*.exe
+*.exe
 
 # Playwright MCP cache (datos de sesiones locales)
 .playwright-mcp/

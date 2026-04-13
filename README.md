@@ -6,7 +6,7 @@
 
 ### Opcion A — Ejecutable (recomendada)
 
-1. Descargar `control-de-agentes.exe` (55 MB)
+1. Pedir el archivo `control-de-agentes.exe` (55 MB) al administrador del proyecto
 2. Copiar a cualquier carpeta
 3. Doble clic en el archivo
 4. Se abre automaticamente en http://localhost:3000
@@ -122,7 +122,6 @@ Desde la seccion MCPs podes configurar servidores [Model Context Protocol](https
 
 ```
 control-de-agentes/
-  control-de-agentes.exe     # Ejecutable portable (doble clic)
   server.js                  # Backend Express (API + streaming)
   package.json               # Dependencias
   .env                       # Tokens locales (NO se sube)
